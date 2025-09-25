@@ -7,10 +7,21 @@ module PlainErrors
     def call(env)
       @app.call(env)
     rescue Exception => exception
-      return @app.call(env) unless PlainErrors.configuration.enabled
-      return @app.call(env) unless text_request?(env)
+      raise exception unless PlainErrors.configuration.enabled
 
       request = Rack::Request.new(env)
+
+      # Check for query string overrides first
+      if request.query_string&.include?('force_standard_error=1')
+        raise exception
+      end
+
+      if request.query_string&.include?('force_plain_error=1')
+        # Force plain error regardless of headers
+      else
+        raise exception unless text_request?(env)
+      end
+
       formatter = Formatter.new(exception, request)
 
       [

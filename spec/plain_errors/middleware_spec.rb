@@ -117,6 +117,54 @@ RSpec.describe PlainErrors::Middleware do
             expect(body.first).to include('ERROR: StandardError: Test error message')
           end
         end
+
+        context 'with query string overrides' do
+          it 'forces plain error when force_plain_error=1' do
+            env = {
+              'PATH_INFO' => '/error',
+              'HTTP_ACCEPT' => 'text/html',
+              'QUERY_STRING' => 'force_plain_error=1'
+            }
+
+            response = middleware.call(env)
+            status, headers, body = response
+
+            expect(status).to eq 500
+            expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
+            expect(body.first).to include('ERROR: StandardError: Test error message')
+          end
+
+          it 'forces standard error when force_standard_error=1' do
+            env = {
+              'PATH_INFO' => '/error',
+              'HTTP_ACCEPT' => 'text/plain',
+              'QUERY_STRING' => 'force_standard_error=1'
+            }
+
+            expect { middleware.call(env) }.to raise_error(StandardError, 'Test error message')
+          end
+
+          it 'works with other query parameters' do
+            env = {
+              'PATH_INFO' => '/error',
+              'HTTP_ACCEPT' => 'text/html',
+              'QUERY_STRING' => 'other=value&force_plain_error=1&another=param'
+            }
+
+            response = middleware.call(env)
+            expect(response[0]).to eq 500
+          end
+
+          it 'prioritizes force_standard_error over force_plain_error' do
+            env = {
+              'PATH_INFO' => '/error',
+              'HTTP_ACCEPT' => 'text/plain',
+              'QUERY_STRING' => 'force_plain_error=1&force_standard_error=1'
+            }
+
+            expect { middleware.call(env) }.to raise_error(StandardError, 'Test error message')
+          end
+        end
       end
     end
   end

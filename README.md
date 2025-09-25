@@ -92,6 +92,23 @@ The middleware also responds to:
 - XMLHttpRequest requests
 - Requests without an Accept header
 
+#### Option 4: Query String Parameters
+
+You can override the default behavior using query string parameters:
+
+```bash
+# Force plain error output (ignores headers/content negotiation)
+curl http://localhost:3000/some-endpoint?force_plain_error=1
+
+# Force standard Rails error handling (bypasses plain errors)
+curl http://localhost:3000/some-endpoint?force_standard_error=1
+```
+
+**Query Parameter Priority:**
+- `force_standard_error=1` takes priority over all other settings
+- `force_plain_error=1` overrides header-based detection
+- Both work with other query parameters: `?debug=true&force_plain_error=1`
+
 ### Sample Output
 
 When an error occurs, you'll get plaintext output like:
