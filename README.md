@@ -179,6 +179,8 @@ config.middleware.insert_after ActionDispatch::ShowExceptions, PlainErrors::Midd
 
 **Why order matters**: Middleware executes in order, so PlainErrors should come first to intercept requests with the special headers before other error handling middleware processes them.
 
+**Note**: PlainErrors may not work for route-not-found (404) errors, as these are typically handled earlier in the Rails middleware stack before reaching PlainErrors.
+
 #### Development with Multiple Error Tools
 
 Common setup when using both PlainErrors (for LLM/agents) and better_errors (for human developers):
