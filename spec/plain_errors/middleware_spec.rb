@@ -58,7 +58,8 @@ RSpec.describe PlainErrors::Middleware do
 
             expect(status).to eq 500
             expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
-            expect(body.first).to include('ERROR: StandardError: Test error message')
+            expect(body.first).to include('ERROR')
+            expect(body.first).to include('StandardError: Test error message')
           end
 
           it 'handles XMLHttpRequest' do
@@ -72,7 +73,8 @@ RSpec.describe PlainErrors::Middleware do
 
             expect(status).to eq 500
             expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
-            expect(body.first).to include('ERROR: StandardError: Test error message')
+            expect(body.first).to include('ERROR')
+            expect(body.first).to include('StandardError: Test error message')
           end
 
           it 'handles default trigger headers' do
@@ -114,7 +116,8 @@ RSpec.describe PlainErrors::Middleware do
 
             expect(status).to eq 500
             expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
-            expect(body.first).to include('ERROR: StandardError: Test error message')
+            expect(body.first).to include('ERROR')
+            expect(body.first).to include('StandardError: Test error message')
           end
         end
 
@@ -131,7 +134,8 @@ RSpec.describe PlainErrors::Middleware do
 
             expect(status).to eq 500
             expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
-            expect(body.first).to include('ERROR: StandardError: Test error message')
+            expect(body.first).to include('ERROR')
+            expect(body.first).to include('StandardError: Test error message')
           end
 
           it 'forces standard error when force_standard_error=1' do
@@ -203,6 +207,37 @@ RSpec.describe PlainErrors::Middleware do
 
       env = { 'HTTP_X_LLM_REQUEST' => '1' }
       expect(middleware_instance.send(:text_request?, env)).to be true
+    end
+
+    it 'accepts truthy header values: 1, true, yes' do
+      # Test "1"
+      env = { 'HTTP_X_PLAIN_ERRORS' => '1' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+
+      # Test "true"
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'true' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+
+      # Test "yes"
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'yes' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+
+      # Test case insensitivity
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'TRUE' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'Yes' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+
+      # Test invalid values (with HTML Accept header to ensure they don't fall through to default)
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'false', 'HTTP_ACCEPT' => 'text/html' }
+      expect(middleware_instance.send(:text_request?, env)).to be false
+
+      env = { 'HTTP_X_PLAIN_ERRORS' => '0', 'HTTP_ACCEPT' => 'text/html' }
+      expect(middleware_instance.send(:text_request?, env)).to be false
+
+      env = { 'HTTP_X_PLAIN_ERRORS' => 'random', 'HTTP_ACCEPT' => 'text/html' }
+      expect(middleware_instance.send(:text_request?, env)).to be false
     end
 
     it 'handles custom trigger headers' do

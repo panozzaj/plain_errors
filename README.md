@@ -1,43 +1,49 @@
 # PlainErrors
 
-A Rails middleware inspired by [better_errors](https://github.com/BetterErrors/better_errors) that provides concise, token-efficient plaintext error output. Optimized for LLMs and coding agents that need to understand Rails errors without consuming excessive tokens.
+A **Rails middleware** that provides concise, **plain text error output optimized for LLMs and coding agents**.
 
-## Features
+This lets your tool test your application and debug errors without filling up the context windows.
 
-- **Minimal plaintext output** - Concise error formatting optimized for LLMs
-- **Code snippet extraction** - Shows relevant source code around the error
-- **Stack trace formatting** - Clean, readable stack traces
-- **Configurable output** - Control what information is included
-- **Special header support** - Easy integration with Playwright MCP and other tools
+For example, if you're using Playwright MCP with Claude Code or another
+LLM-powered tool, PlainErrors will return simpler error messages that take up
+less of the context window.
+
+## Token Comparison Summary
+
+In my test with a real Rails application, PlainErrors achieves significant
+token reductions over both
+[BetterErrors](https://github.com/BetterErrors/better_errors)
+and the standard Rails development error page
+(as calculated by OpenAI's [`tiktoken`](https://github.com/openai/tiktoken) library):
+
+| Metric | PlainErrors | Rails Default      | BetterErrors          |
+| ------ | ----------- | ------------------ | --------------------- |
+| Bytes  | 755         | 8,854              | 113,544               |
+| Tokens | 217         | 2,975 (13.7x more) |  25,055 (115.5x more) |
+
+(To be clear, I like BetterErrors and the Rails default error page -- they're great for manual human debugging.
+They're just not optimized for LLMs or automation workflows.)
+
 
 ## Installation
 
-Add this line to your application's Gemfile:
+Add to your Gemfile:
 
 ```ruby
 gem 'plain_errors', group: :development
+
+# OR
+
+group :development do
+  gem 'plain_errors'
+end
 ```
 
-And then execute:
+Then run `bundle install`.
 
-```bash
-$ bundle install
-```
+## Setup
 
-## Usage
-
-### Basic Setup
-
-Add the middleware to your Rails application:
-
-```ruby
-# config/environments/development.rb
-config.middleware.use PlainErrors::Middleware
-```
-
-### Configuration
-
-Configure the middleware in an initializer:
+Add configuration and middleware in an initializer:
 
 ```ruby
 # config/initializers/plain_errors.rb
@@ -46,185 +52,199 @@ if defined?(PlainErrors)
     config.enabled = Rails.env.development?
     config.show_code_snippets = true
     config.code_lines_context = 3
-    config.show_request_info = false
-    config.show_variables = false
-    config.application_root = Rails.root
+    config.trigger_headers = ['X-Plain-Errors', 'X-LLM-Request']
   end
+
+  # IMPORTANT: Must use insert_before ActionDispatch::ShowExceptions
+  # Rails includes ShowExceptions by default which catches all exceptions.
+  Rails.application.config.middleware.insert_before ActionDispatch::ShowExceptions, PlainErrors::Middleware
 end
 ```
 
-### Integration with Playwright MCP and LLM Tools
+**Why `insert_before` is required:**
 
-The primary way to use this middleware is by sending a special header with your requests. This is especially useful for Playwright MCP requests from coding agents:
+Rails always includes `ActionDispatch::ShowExceptions` in the middleware stack, which catches all exceptions and renders error pages. PlainErrors must be inserted **before** ShowExceptions to intercept exceptions when trigger conditions are met.
 
-#### Option 1: X-Plain-Errors Header (Recommended)
+**Correct middleware order:**
 
-Send the `X-Plain-Errors: 1` header with your requests:
-
-```javascript
-// Playwright MCP example
-await page.setExtraHTTPHeaders({
-  'X-Plain-Errors': '1'
-});
-
-await page.goto('http://localhost:3000/some-endpoint');
 ```
+PlainErrors::Middleware          ← Checks trigger conditions, intercepts if matched
+ActionDispatch::ShowExceptions   ← Rails default error handler (fallback)
+BetterErrors::Middleware         ← If installed
+```
+
+### Working with Other Error Handlers
+
+PlainErrors should work when used before BetterErrors, Sentry, Honeybadger, and other error handlers:
+
+- **When trigger conditions match** (e.g., `X-Plain-Errors: true` header): PlainErrors returns plain text
+- **When trigger conditions don't match**: PlainErrors passes through to standard error handlers (BetterErrors, etc.)
+
+This allows you to use PlainErrors for LLM / automation workflows while keeping BetterErrors for manual debugging.
+
+**Important notes:**
+
+- Middleware must be configured in an initializer (not in `config/environments/development.rb`)
+- PlainErrors may not catch 404 (route-not-found) errors due to Rails middleware ordering
+- Use `config.verbose = true` for debugging if PlainErrors isn't triggering as expected
+
+## Usage with Claude Code
+
+To use PlainErrors with Claude Code's Playwright MCP server:
+
+1. Add or modify Playwright MCP in `~/.claude/claude.json`:
+
+```json
+{
+  ...
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--config=~/.claude/playwright-config.json"
+      ],
+      "env": {}
+    }
+  },
+  ...
+}
+```
+
+This can be a little tricky to hunt down if you have multiple projects servers
+configured.  Perhaps it could go in a project-specific `.claude/claude.json`
+file? (If you try this, please let me know how it goes!)
+
+2. Create `~/.claude/playwright-config.json`:
+
+```json
+{
+  "browser": {
+    "contextOptions": {
+      "extraHTTPHeaders": {
+        "X-Plain-Errors": "true"
+      }
+    }
+  }
+}
+```
+
+This configures Playwright to send the `X-Plain-Errors` header with all requests, triggering plaintext error output.
+
+## Triggering Plaintext Errors
+
+PlainErrors decides whether to show plain text errors based on several conditions:
+
+### Query Parameters (Highest Priority)
+
+Override all other behavior with query strings:
 
 ```bash
-# cURL example
-curl -H "X-Plain-Errors: 1" http://localhost:3000/some-endpoint
+# Force plaintext errors (overrides Accept headers)
+curl http://localhost:3000/endpoint?force_plain_error=1
+
+# Force standard Rails/BetterErrors (overrides all plain error triggers)
+curl -H "X-Plain-Errors: 1" http://localhost:3000/endpoint?force_standard_error=1
 ```
 
-#### Option 2: X-LLM-Request Header
+### Headers
 
-Alternatively, use the `X-LLM-Request: 1` header:
-
-```javascript
-await page.setExtraHTTPHeaders({
-  'X-LLM-Request': '1'
-});
-```
-
-#### Option 3: Content-Type Negotiation
-
-The middleware also responds to:
-- `Accept: text/plain` header
-- XMLHttpRequest requests
-- Requests without an Accept header
-
-#### Option 4: Query String Parameters
-
-You can override the default behavior using query string parameters:
+Send `X-Plain-Errors` with a truthy value (`1`, `true`, or `yes`) or any configured trigger header:
 
 ```bash
-# Force plain error output (ignores headers/content negotiation)
-curl http://localhost:3000/some-endpoint?force_plain_error=1
-
-# Force standard Rails error handling (bypasses plain errors)
-curl http://localhost:3000/some-endpoint?force_standard_error=1
+# All of these work:
+curl -H "X-Plain-Errors: 1" http://localhost:3000/endpoint
+curl -H "X-Plain-Errors: true" http://localhost:3000/endpoint
+curl -H "X-Plain-Errors: yes" http://localhost:3000/endpoint
 ```
 
-**Query Parameter Priority:**
-- `force_standard_error=1` takes priority over all other settings
-- `force_plain_error=1` overrides header-based detection
-- Both work with other query parameters: `?debug=true&force_plain_error=1`
+### Accept Header Behavior
 
-### Sample Output
+PlainErrors also checks the `Accept` header:
 
-When an error occurs, you'll get plaintext output like:
+- **No Accept header** → Plain text errors (for CLI tools, API clients)
+- **Accept: text/plain** → Plain text errors
+- **Accept: */** (curl default) → Plain text errors
+- **Accept: text/html** → Standard error handler (BetterErrors, etc.)
+
+```bash
+# These all trigger plain errors:
+curl http://localhost:3000/endpoint                    # No Accept header
+curl -H "Accept: text/plain" http://localhost:3000/endpoint
+curl -H "Accept: */*" http://localhost:3000/endpoint
+
+# This uses standard error handler:
+curl -H "Accept: text/html" http://localhost:3000/endpoint
+```
+
+### Priority Order
+
+1. `force_standard_error=1` query param (passes through to standard handler)
+2. `force_plain_error=1` query param (shows plain errors)
+3. Configured trigger headers (e.g., `X-Plain-Errors: 1`)
+4. Accept header check (see above)
+
+## Example Output
 
 ```
-ERROR: NoMethodError: undefined method `non_existent_method' for #<User:0x00007f8b1c0d3e40>
+ERROR
+StandardError: This is a test error to verify plain_errors is working!
 
-CODE SNIPPET:
-File: app/controllers/users_controller.rb:15
+TRACE
+0: app/controllers/debug_controller.rb:5:in `test_error'
+1: actionpack (7.2.2.2) lib/action_controller/metal/basic_implicit_render.rb:8:in `send_action'
+2: actionpack (7.2.2.2) lib/abstract_controller/base.rb:226:in `process_action'
+3: actionpack (7.2.2.2) lib/action_controller/metal/rendering.rb:193:in `process_action'
+4: actionpack (7.2.2.2) lib/abstract_controller/callbacks.rb:261:in `block in process_action'
+(99 more lines omitted)
 
-    13:   def show
-    14:     @user = User.find(params[:id])
->>> 15:     @user.non_existent_method
-    16:     render json: @user
-    17:   end
-
-STACK TRACE:
-  0: ./app/controllers/users_controller.rb:15:in `show'
-  1: ./app/controllers/application_controller.rb:8:in `process_action'
-  2: /gems/actionpack-7.0.0/lib/action_controller/metal.rb:190:in `dispatch'
+app/controllers/debug_controller.rb:5
+3: class DebugController < ActionController::Base
+4:   def test_error
+5:     raise StandardError, "This is a test error to verify plain_errors is working!"
+6:   end
+7:
+8:   def middleware
 ```
+
+## Non-Rails Usage
+
+I haven't tested PlainErrors outside of Rails, but it should work in any Rack-based application.
+If you run into issues with other frameworks, please open an issue.
+
 
 ## Configuration Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `Rails.env.development?` | Enable/disable the middleware |
-| `show_code_snippets` | `true` | Include source code around error lines |
-| `code_lines_context` | `3` | Number of lines before/after error to show |
-| `show_request_info` | `false` | Include HTTP request details |
-| `show_variables` | `false` | Include variable inspection (requires binding_of_caller) |
-| `max_variable_size` | `1000` | Maximum size for variable inspection |
-| `application_root` | `Rails.root` | Root path for abbreviating file paths |
-| `trigger_headers` | `['X-Plain-Errors', 'X-LLM-Request']` | HTTP headers that trigger plaintext error output |
+| Option                  | Default                               | Description                               |
+| ------                  | -------                               | -----------                               |
+| `enabled`               | `Rails.env.development?`              | Enable/disable the middleware             |
+| `show_code_snippets`    | `true`                                | Include source code around error lines    |
+| `code_lines_context`    | `3`                                   | Number of lines before/after error        |
+| `show_request_info`     | `false`                               | Include HTTP request details              |
+| `show_variables`        | `false`                               | Include variable inspection               |
+| `max_variable_size`     | `1000`                                | Max size for variable inspection          |
+| `max_stack_trace_lines` | `5`                                   | Max stack trace lines (nil for unlimited) |
+| `application_root`      | `Rails.root`                          | Root path for abbreviating paths          |
+| `trigger_headers`       | `['X-Plain-Errors', 'X-LLM-Request']` | Headers that trigger plaintext output     |
+| `verbose`               | `false`                               | Enable verbose debug logging to stderr    |
 
-## Rails Integration
+## Debugging
 
-### Automatic Setup (Recommended)
-
-Create a Rails initializer to automatically add the middleware in development:
+If PlainErrors isn't working as expected, enable verbose mode to see detailed logging:
 
 ```ruby
 # config/initializers/plain_errors.rb
-if Rails.env.development?
-  Rails.application.config.middleware.use PlainErrors::Middleware
-
-  PlainErrors.configure do |config|
-    config.show_code_snippets = true
-    config.code_lines_context = 5
-    config.show_request_info = ENV['PLAIN_ERRORS_VERBOSE'] == '1'
-    config.trigger_headers = ['X-Plain-Errors', 'X-My-Custom-Agent']
-  end
-end
-```
-
-#### Middleware Stack Positioning
-
-**If using with better_errors or similar gems**, place PlainErrors **before** them in the middleware stack to ensure it takes precedence for requests with trigger headers:
-
-```ruby
-# config/application.rb
-# PlainErrors should come BEFORE better_errors in the stack
-config.middleware.insert_before BetterErrors::Middleware, PlainErrors::Middleware
-
-# Or insert after ShowExceptions but before other error handlers
-config.middleware.insert_after ActionDispatch::ShowExceptions, PlainErrors::Middleware
-```
-
-**Why order matters**: Middleware executes in order, so PlainErrors should come first to intercept requests with the special headers before other error handling middleware processes them.
-
-**Note**: PlainErrors may not work for route-not-found (404) errors, as these are typically handled earlier in the Rails middleware stack before reaching PlainErrors.
-
-#### Development with Multiple Error Tools
-
-Common setup when using both PlainErrors (for LLM/agents) and better_errors (for human developers):
-
-```ruby
-# config/environments/development.rb
-if defined?(BetterErrors)
-  # PlainErrors goes first to catch trigger headers
-  config.middleware.insert_before BetterErrors::Middleware, PlainErrors::Middleware
-else
-  config.middleware.use PlainErrors::Middleware
-end
-
 PlainErrors.configure do |config|
-  config.enabled = true
-  config.show_code_snippets = true
-  config.trigger_headers = ['X-Plain-Errors', 'X-LLM-Request', 'X-Playwright-MCP']
+  # ...
+  config.verbose = true
 end
 ```
 
 ## Security
 
-⚠️ **Important**: This middleware should only be enabled in development environments. It can expose sensitive application internals and source code.
-
-The middleware is disabled by default in production, but always verify your configuration:
-
-```ruby
-# Explicitly disable in production
-PlainErrors.configure do |config|
-  config.enabled = false if Rails.env.production?
-end
-```
-
-## Why PlainErrors?
-
-- **LLM-Optimized**: Minimal token usage while providing essential debugging info
-- **Coding Agent Friendly**: Easy integration with automated tools via headers
-- **Developer Friendly**: Clean, readable output that's easy to scan
-- **Configurable**: Show only what you need for your specific use case
-
-## Contributing
-
-Bug reports and pull requests are welcome on GitHub.
+⚠️ **Only enable in development environments.** PlainErrors exposes application internals and source code.
 
 ## License
 
-The gem is available as open source under the [MIT License](https://opensource.org/licenses/MIT).
+Available under the [MIT License](https://opensource.org/licenses/MIT).

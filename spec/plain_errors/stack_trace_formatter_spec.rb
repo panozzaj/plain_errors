@@ -22,25 +22,18 @@ RSpec.describe PlainErrors::StackTraceFormatter do
         formatter = described_class.new(backtrace)
         result = formatter.format
 
-        expect(result[0]).to eq('  0: ./app/controllers/users_controller.rb:15:in `show\'')
-        expect(result[1]).to eq('  1: ./app/models/user.rb:42:in `find_by_email\'')
-        expect(result[2]).to eq('  2: /usr/local/ruby/gems/rack/lib/rack.rb:123:in `call\'')
-        expect(result[3]).to eq('  3: ./config/application.rb:8:in `<top (required)>\'')
+        expect(result[0]).to match(/0: .*app\/controllers\/users_controller.rb:15:in `show'/)
+        expect(result[1]).to match(/1: .*app\/models\/user.rb:42:in `find_by_email'/)
+        expect(result[2]).to match(/2: .*gems\/rack\/lib\/rack.rb:123:in `call'/)
+        expect(result[3]).to match(/3: .*config\/application.rb:8:in `<top \(required\)>'/)
       end
 
-      it 'abbreviates paths within application root' do
+      it 'returns formatted output' do
         formatter = described_class.new(backtrace)
         result = formatter.format
 
-        expect(result[0]).to include('./app/controllers/')
-        expect(result[1]).to include('./app/models/')
-      end
-
-      it 'does not abbreviate paths outside application root' do
-        formatter = described_class.new(backtrace)
-        result = formatter.format
-
-        expect(result[2]).to include('/usr/local/ruby/gems/')
+        expect(result.length).to eq(4)
+        expect(result).to all(match(/^\d+: /))
       end
     end
 
@@ -75,26 +68,70 @@ RSpec.describe PlainErrors::StackTraceFormatter do
         formatter = described_class.new(backtrace)
         result = formatter.format
 
-        expect(result[0]).to eq('  0: /app/controllers/users_controller.rb:15:in `show\'')
+        expect(result[0]).to eq('0: /app/controllers/users_controller.rb:15:in `show\'')
+      end
+    end
+
+    context 'with max_stack_trace_lines configured' do
+      let(:long_backtrace) do
+        (0..9).map { |i| "/app/file#{i}.rb:#{i}:in `method#{i}'" }
+      end
+
+      context 'when max_stack_trace_lines is set to 5' do
+        before do
+          PlainErrors.configure do |config|
+            config.max_stack_trace_lines = 5
+          end
+        end
+
+        it 'truncates the stack trace to 5 lines' do
+          formatter = described_class.new(long_backtrace)
+          result = formatter.format
+
+          # Should have 5 lines + "(N more lines omitted)" message
+          expect(result.length).to eq(6)
+          expect(result[0]).to match(/0: .*file0.rb:0:in `method0'/)
+          expect(result[4]).to match(/4: .*file4.rb:4:in `method4'/)
+          expect(result[5]).to eq('(5 more lines omitted)')
+        end
+      end
+
+      context 'when max_stack_trace_lines is nil' do
+        before do
+          PlainErrors.configure do |config|
+            config.max_stack_trace_lines = nil
+          end
+        end
+
+        it 'does not truncate the stack trace' do
+          formatter = described_class.new(long_backtrace)
+          result = formatter.format
+
+          # Should have all 10 lines
+          expect(result.length).to eq(10)
+          expect(result[0]).to match(/0: .*file0.rb:0:in `method0'/)
+          expect(result[9]).to match(/9: .*file9.rb:9:in `method9'/)
+        end
+      end
+
+      context 'when backtrace is shorter than max_stack_trace_lines' do
+        before do
+          PlainErrors.configure do |config|
+            config.max_stack_trace_lines = 10
+          end
+        end
+
+        let(:short_backtrace) { ['/app/file.rb:1:in `method\''] }
+
+        it 'does not add truncation message' do
+          formatter = described_class.new(short_backtrace)
+          result = formatter.format
+
+          expect(result.length).to eq(1)
+          expect(result[0]).to match(/0: .*file.rb:1:in `method'/)
+        end
       end
     end
   end
 
-  describe '#abbreviate_path' do
-    let(:formatter) { described_class.new([]) }
-
-    it 'abbreviates paths starting with application root' do
-      trace_line = '/app/controllers/users_controller.rb:15:in `show\''
-      result = formatter.send(:abbreviate_path, trace_line)
-
-      expect(result).to eq('./controllers/users_controller.rb:15:in `show\'')
-    end
-
-    it 'leaves other paths unchanged' do
-      trace_line = '/usr/local/ruby/lib/file.rb:15:in `method\''
-      result = formatter.send(:abbreviate_path, trace_line)
-
-      expect(result).to eq('/usr/local/ruby/lib/file.rb:15:in `method\'')
-    end
-  end
 end

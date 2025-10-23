@@ -9,7 +9,11 @@ module PlainErrors
     def format
       output = []
 
-      output << "ERROR: #{@exception.class}: #{@exception.message}"
+      output << "ERROR"
+      output << "#{@exception.class}: #{@exception.message}"
+      output << ""
+
+      output << stack_trace_section
       output << ""
 
       if @config.show_code_snippets && source_location
@@ -17,16 +21,9 @@ module PlainErrors
         output << ""
       end
 
-      output << stack_trace_section
-
       if @config.show_request_info && @request
-        output << ""
         output << request_info_section
-      end
-
-      if @config.show_variables
         output << ""
-        output << variables_section
       end
 
       output.join("\n")
@@ -53,16 +50,14 @@ module PlainErrors
       extractor = CodeExtractor.new(location[:file], location[:line])
       snippet = extractor.extract(@config.code_lines_context)
 
-      output = ["CODE SNIPPET:"]
-      output << "File: #{abbreviate_path(location[:file])}:#{location[:line]}"
-      output << ""
+      output = ["#{abbreviate_path(location[:file])}:#{location[:line]}"]
       output.concat(snippet)
       output
     end
 
     def stack_trace_section
       formatter = StackTraceFormatter.new(@exception.backtrace || [])
-      output = ["STACK TRACE:"]
+      output = ["TRACE"]
       output.concat(formatter.format)
       output
     end
@@ -76,14 +71,6 @@ module PlainErrors
         output << "Params: #{@request.params.inspect}"
       end
 
-      output
-    end
-
-    def variables_section
-      return ["Variables inspection not available"] unless defined?(Binding)
-
-      output = ["VARIABLES:"]
-      output << "(Variable inspection would require binding_of_caller gem)"
       output
     end
 
