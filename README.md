@@ -158,10 +158,10 @@ curl -H "X-Plain-Errors: yes" http://localhost:3000/endpoint
 
 PlainErrors also checks the `Accept` header:
 
-- **No Accept header** → Plain text errors (for CLI tools, API clients)
-- **Accept: text/plain** → Plain text errors
-- **Accept: */** (curl default) → Plain text errors
-- **Accept: text/html** → Standard error handler (BetterErrors, etc.)
+- No Accept header → Plain text errors (for CLI tools, API clients)
+- `Accept: text/plain` → Plain text errors
+- `Accept: */*` (curl default) → Plain text errors
+- `Accept: text/html` → Standard error handler (BetterErrors, etc.)
 
 ```bash
 # These all trigger plain errors:
