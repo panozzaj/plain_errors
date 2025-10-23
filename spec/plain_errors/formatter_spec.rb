@@ -91,13 +91,72 @@ RSpec.describe PlainErrors::Formatter do
     end
 
     context 'with code snippets disabled' do
-      before { PlainErrors.configuration.show_code_snippets = false }
+      let(:sample_code) { "raise 'Test error'\n" }
+      let(:temp_file) do
+        file = Tempfile.new(['test_disabled', '.rb'])
+        file.write(sample_code)
+        file.close
+        file
+      end
+
+      after { temp_file.unlink }
+
+      before do
+        exception.set_backtrace(["#{temp_file.path}:1:in `test'"])
+        PlainErrors.configuration.show_code_snippets = false
+      end
 
       it 'does not include code snippet section' do
         formatter = described_class.new(exception)
         result = formatter.format
 
-        expect(result).not_to include('CODE SNIPPET:')
+        # Should have ERROR and TRACE
+        expect(result).to include('ERROR')
+        expect(result).to include('TRACE')
+        # Should NOT have code content lines
+        expect(result).not_to match(/1: raise 'Test error'/)
+        # The file path will still appear in TRACE but not as a code section
+        lines = result.split("\n")
+        # Count how many times the temp file path appears - should only be in TRACE
+        path_count = lines.count { |line| line.include?(temp_file.path) }
+        expect(path_count).to eq(1) # Only in the trace line
+      end
+    end
+
+    context 'with code_lines_context set to 0' do
+      let(:sample_code) do
+        <<~RUBY
+          # Line before
+          raise 'Test error'
+          # Line after
+        RUBY
+      end
+
+      let(:temp_file) do
+        file = Tempfile.new(['test_zero_context', '.rb'])
+        file.write(sample_code)
+        file.close
+        file
+      end
+
+      after { temp_file.unlink }
+
+      before do
+        exception.set_backtrace(["#{temp_file.path}:2:in `test'"])
+        PlainErrors.configuration.code_lines_context = 0
+      end
+
+      it 'shows only the error line without context' do
+        formatter = described_class.new(exception)
+        result = formatter.format
+
+        expect(result).to include('ERROR')
+        expect(result).to include('TRACE')
+        # Should show only the error line
+        expect(result).to include("2: raise 'Test error'")
+        # Should NOT show context lines
+        expect(result).not_to include('# Line before')
+        expect(result).not_to include('# Line after')
       end
     end
 

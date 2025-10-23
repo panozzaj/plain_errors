@@ -214,13 +214,19 @@ If you run into issues with other frameworks, please open an issue.
 | Option                  | Default                               | Description                               |
 | ------                  | -------                               | -----------                               |
 | `enabled`               | `Rails.env.development?`              | Enable/disable the middleware             |
-| `show_code_snippets`    | `true`                                | Include source code around error lines    |
-| `code_lines_context`    | `2`                                   | Number of lines before/after error        |
+| `show_code_snippets`    | `true`                                | Include source code section (set to `false` to disable entirely) |
+| `code_lines_context`    | `2`                                   | Lines of context: `0` = error line only, `1+` = lines before/after |
 | `show_request_info`     | `false`                               | Include HTTP request details              |
 | `max_stack_trace_lines` | `5`                                   | Max stack trace lines (nil for unlimited) |
 | `application_root`      | `Rails.root`                          | Root path for abbreviating paths          |
 | `trigger_headers`       | `['X-Plain-Errors', 'X-LLM-Request']` | Headers that trigger plaintext output     |
 | `verbose`               | `false`                               | Enable verbose debug logging to stderr    |
+
+### Code Snippet Behavior
+
+- `show_code_snippets: false` → No code section displayed
+- `show_code_snippets: true` + `code_lines_context: 0` → Shows only the error line
+- `show_code_snippets: true` + `code_lines_context: 2` → Shows 2 lines before and after the error (default)
 
 ## Debugging
 
