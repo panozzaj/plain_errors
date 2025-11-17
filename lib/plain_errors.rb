@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'plain_errors/configuration'
 require_relative 'plain_errors/middleware'
 require_relative 'plain_errors/formatter'

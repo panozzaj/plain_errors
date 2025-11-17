@@ -82,8 +82,11 @@ This allows you to use PlainErrors for LLM / automation workflows while keeping 
 **Important notes:**
 
 - Middleware must be configured in an initializer (not in `config/environments/development.rb`)
-- PlainErrors may not catch 404 (route-not-found) errors due to Rails middleware ordering
 - Use `config.verbose = true` for debugging if PlainErrors isn't triggering as expected
+
+**Handling 404 errors:**
+
+PlainErrors will catch and format 404 errors when placed before `ActionDispatch::ShowExceptions`. Rails routing errors (404s) don't raise exceptions through the middleware stack - they return 404 responses. PlainErrors detects these and returns succinct plain text like "404 Not Found: /path" when trigger conditions are met.
 
 ## Usage with Claude Code
 
