@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 RSpec.describe PlainErrors::Middleware do
@@ -108,16 +110,21 @@ RSpec.describe PlainErrors::Middleware do
         end
 
         context 'with no Accept header' do
-          it 'returns plaintext error response' do
+          it 'lets the exception propagate (conservative default)' do
             env = { 'PATH_INFO' => '/error' }
 
-            response = middleware.call(env)
-            status, headers, body = response
+            expect { middleware.call(env) }.to raise_error(StandardError, 'Test error message')
+          end
+        end
 
-            expect(status).to eq 500
-            expect(headers['Content-Type']).to eq 'text/plain; charset=utf-8'
-            expect(body.first).to include('ERROR')
-            expect(body.first).to include('StandardError: Test error message')
+        context 'with wildcard Accept header (*/*)' do
+          it 'lets the exception propagate (browser-like request)' do
+            env = {
+              'PATH_INFO' => '/error',
+              'HTTP_ACCEPT' => '*/*'
+            }
+
+            expect { middleware.call(env) }.to raise_error(StandardError, 'Test error message')
           end
         end
 
@@ -191,14 +198,39 @@ RSpec.describe PlainErrors::Middleware do
       expect(middleware_instance.send(:text_request?, env)).to be false
     end
 
-    it 'returns true when no Accept header is present' do
+    it 'returns false when no Accept header is present (conservative default)' do
       env = {}
+      expect(middleware_instance.send(:text_request?, env)).to be false
+    end
+
+    it 'returns false for wildcard Accept header (*/*) (browser-like request)' do
+      env = { 'HTTP_ACCEPT' => '*/*' }
+      expect(middleware_instance.send(:text_request?, env)).to be false
+    end
+
+    it 'returns true for application/json Accept (non-browser, non-wildcard)' do
+      env = { 'HTTP_ACCEPT' => 'application/json' }
       expect(middleware_instance.send(:text_request?, env)).to be true
     end
 
     it 'returns true for mixed accept header without html' do
       env = { 'HTTP_ACCEPT' => 'application/json, text/plain' }
       expect(middleware_instance.send(:text_request?, env)).to be true
+    end
+
+    it 'returns true when text/plain and */* are both present (text/plain wins)' do
+      env = { 'HTTP_ACCEPT' => 'text/plain, */*' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+    end
+
+    it 'returns true for XMLHttpRequest even with text/html Accept' do
+      env = { 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'text/html' }
+      expect(middleware_instance.send(:text_request?, env)).to be true
+    end
+
+    it 'returns false for typical browser Accept header' do
+      env = { 'HTTP_ACCEPT' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+      expect(middleware_instance.send(:text_request?, env)).to be false
     end
 
     it 'returns true for configured trigger headers' do

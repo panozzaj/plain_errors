@@ -91,10 +91,16 @@ module PlainErrors
         return true
       end
 
+      # Check XMLHttpRequest before Accept header (AJAX requests should get plain errors)
+      if env['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest'
+        log 'XMLHttpRequest detected, returning true' if PlainErrors.configuration.verbose
+        return true
+      end
+
       # No trigger headers matched, check Accept header
       if env['HTTP_ACCEPT'].nil?
-        log 'No Accept header, treating as text request' if PlainErrors.configuration.verbose
-        return true
+        log 'No Accept header, treating as HTML request (conservative default)' if PlainErrors.configuration.verbose
+        return false
       end
 
       accept_header = env['HTTP_ACCEPT'].to_s.downcase
@@ -105,16 +111,17 @@ module PlainErrors
         return true
       end
 
-      if env['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest'
-        log 'XMLHttpRequest detected, returning true' if PlainErrors.configuration.verbose
-        return true
+      # Only treat as text request if Accept header explicitly excludes HTML
+      # and doesn't look like a browser request (e.g., */* is often sent by browsers)
+      if accept_header.include?('text/html') || accept_header.include?('*/*')
+        log 'text_request? returning false (accept includes text/html or */*)' if PlainErrors.configuration.verbose
+        return false
       end
 
-      result = !accept_header.include?('text/html')
       if PlainErrors.configuration.verbose
-        log "text_request? returning #{result} (no trigger headers, accept: #{accept_header})"
+        log "text_request? returning true (no text/html or */* in accept: #{accept_header})"
       end
-      result
+      true
     end
 
     def should_handle_request?(env)
